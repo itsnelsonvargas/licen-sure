@@ -23,6 +23,8 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXV
 
 # --- Helper Functions for Text Extraction ---
 
+import shutil
+
 def _download_file_from_supabase(file_path: str, local_path: str):
     """
     Simulates downloading a file from Supabase Storage.
@@ -43,7 +45,22 @@ def _download_file_from_supabase(file_path: str, local_path: str):
     # with open(local_path, 'wb') as f:
     #     f.write(response)
     
-    # For local dev, we will simply create a dummy file
+    # For local dev, try to find the file in the backend storage
+    # We are in ai-service/app/services.py -> ../../backend/storage/app/private
+    try:
+        base_storage_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../backend/storage/app/private"))
+        source_file_path = os.path.join(base_storage_path, file_path)
+        
+        if os.path.exists(source_file_path):
+             shutil.copy2(source_file_path, local_path)
+             print(f"Copied '{source_file_path}' to '{local_path}'")
+             return
+        else:
+             print(f"Source file not found at: {source_file_path}")
+    except Exception as e:
+        print(f"Error trying to copy file from backend: {e}")
+
+    # Fallback to dummy file if copy fails
     with open(local_path, 'w') as f:
         f.write("This is dummy content for " + file_path + ". Real content would be extracted here.")
     print(f"Simulated download of '{file_path}' to '{local_path}'")
@@ -155,9 +172,13 @@ Here is the text:
         raise
 
 
+import tempfile
+
 async def process_document_logic(document_id: uuid.UUID, file_path: str):
     """Orchestrates the document processing flow."""
-    local_file_path = f"/tmp/{document_id}_{os.path.basename(file_path)}"
+    # Use cross-platform temporary directory
+    temp_dir = tempfile.gettempdir()
+    local_file_path = os.path.join(temp_dir, f"{document_id}_{os.path.basename(file_path)}")
     extracted_text = ""
     callback_success = False
 
