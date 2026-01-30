@@ -57,14 +57,26 @@ class SimulateDocumentUpload extends Command
                 $this->error("Provided file '{$filePath}' does not exist.");
                 return Command::FAILURE;
             }
+
+            $mimeType = mime_content_type($filePath);
+            // Fix for Windows/PHP returning octet-stream for some files
+            if ($mimeType === 'application/octet-stream' || !$mimeType) {
+                $extension = pathinfo($filePath, PATHINFO_EXTENSION);
+                if ($extension === 'docx') {
+                    $mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+                } elseif ($extension === 'pdf') {
+                    $mimeType = 'application/pdf';
+                }
+            }
+
             $uploadedFile = new UploadedFile(
                 $filePath,
                 basename($filePath),
-                mime_content_type($filePath),
+                $mimeType,
                 null,
                 true
             );
-            $this->info("Using provided file: {$filePath}");
+            $this->info("Using provided file: {$filePath} with mime: {$mimeType}");
         } else {
             // Create a dummy PDF file content
             $dummyContent = "This is a dummy PDF file for testing purposes. It contains some text that will be extracted. 

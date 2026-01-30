@@ -26,3 +26,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
 // Internal API endpoint for AI service callback (needs secure handling)
 Route::post('/documents/{document}/questions', [DocumentController::class, 'processAiCallback']);
+
+Route::post('/debug-callback/{id}', function ($id) {
+    return response()->json(['message' => 'Route hit', 'id' => $id]);
+});

@@ -5,7 +5,9 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use App\Enums\DocumentStatus;
 
 class Document extends Model
 {
@@ -39,5 +41,13 @@ class Document extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Get the questions for the document.
+     */
+    public function questions(): HasMany
+    {
+        return $this->hasMany(Question::class);
     }
 }
