@@ -203,6 +203,21 @@ class DocumentController extends Controller
         return response()->json($questions)->withHeaders($this->corsHeaders());
     }
 
+    public function downloadPublicFile(Document $document)
+    {
+        $path = $document->storage_path;
+        $absolute = storage_path('app/' . $path);
+        if (!file_exists($absolute)) {
+            return response()->json(['message' => 'File not found'], 404)->withHeaders($this->corsHeaders());
+        }
+        $mime = \Illuminate\Support\Facades\Storage::mimeType($path) ?? 'application/octet-stream';
+        $name = $document->title ?: basename($absolute);
+        return response()->file($absolute, [
+            'Content-Type' => $mime,
+            'Content-Disposition' => 'inline; filename="' . $name . '"',
+        ])->withHeaders($this->corsHeaders());
+    }
+
     /**
      * Ensure a guest user exists for unauthenticated flows.
      */

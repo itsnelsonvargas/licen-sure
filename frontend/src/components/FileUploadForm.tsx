@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import api from "@/lib/api";
-import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 
 export default function FileUploadForm() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -10,7 +10,8 @@ export default function FileUploadForm() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { data: session } = useSession(); // Access session for potential user info
+  const router = useRouter();
+  const [documentId, setDocumentId] = useState<string | null>(null);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files.length > 0) {
@@ -35,7 +36,6 @@ export default function FileUploadForm() {
     formData.append("document", selectedFile);
 
     try {
-      // Ensure CSRF cookie is set before making the POST request
       await api.get("/sanctum/csrf-cookie");
 
       const response = await api.post("/documents", formData, {
@@ -52,13 +52,17 @@ export default function FileUploadForm() {
       });
 
       setMessage(response.data.message || "File uploaded successfully!");
-      setSelectedFile(null); // Clear selected file
-      // Optionally, trigger a refresh of the document list in the parent component
-    } catch (err: any) {
+      const id = response.data?.document?.id as string | undefined;
+      if (id) {
+        setDocumentId(id);
+        router.push(`/quiz/${id}`);
+      }
+      setSelectedFile(null);
+    } catch (err: unknown) {
       console.error("Upload error:", err);
       setError(
-        err.response?.data?.message ||
-          err.message ||
+        (err as { response?: { data?: { message?: string } }; message?: string }).response?.data?.message ||
+          (err as { message?: string }).message ||
           "Failed to upload file."
       );
     } finally {
@@ -128,6 +132,13 @@ export default function FileUploadForm() {
 
       {message && <p className="text-sm text-green-600">{message}</p>}
       {error && <p className="text-sm text-red-600">{error}</p>}
+      {documentId && (
+        <div className="text-sm">
+          <a href={`/quiz/${documentId}`} className="text-indigo-600 hover:text-indigo-800">
+            View Questions
+          </a>
+        </div>
+      )}
 
       <button
         onClick={handleUpload}

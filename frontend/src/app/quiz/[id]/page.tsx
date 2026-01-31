@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import api from "@/lib/api";
@@ -71,7 +71,11 @@ export default function QuizPage() {
             typeof data === "object" && data && "message" in (data as object)
               ? (data as { message?: string }).message
               : undefined;
-          setError(msg || "Quiz not ready for this document.");
+          if (msg && msg.toLowerCase().includes("quiz not ready")) {
+            setError(null);
+          } else {
+            setError(msg || "Quiz not ready for this document.");
+          }
         }
       } else {
         const res = await fetch(`/backend-api/public/documents/${documentId}/quiz`, {
@@ -87,12 +91,21 @@ export default function QuizPage() {
             typeof data === "object" && data && "message" in (data as object)
               ? (data as { message?: string }).message
               : undefined;
-          setError(msg || "Quiz not ready for this document.");
+          if (msg && msg.toLowerCase().includes("quiz not ready")) {
+            setError(null);
+          } else {
+            setError(msg || "Quiz not ready for this document.");
+          }
         }
       }
     } catch (err) {
       console.error("Failed to fetch quiz questions:", err);
-      setError(getErrorMessage(err));
+      const m = getErrorMessage(err);
+      if (m.toLowerCase().includes("quiz not ready")) {
+        setError(null);
+      } else {
+        setError(m);
+      }
     } finally {
       setLoading(false);
     }
@@ -101,6 +114,29 @@ export default function QuizPage() {
   useEffect(() => {
     fetchQuizQuestions();
   }, [fetchQuizQuestions]);
+
+  const pollRef = useRef<NodeJS.Timeout | null>(null);
+  useEffect(() => {
+    if (!loading && !error && questions.length === 0 && !pollRef.current) {
+      pollRef.current = setInterval(() => {
+        if (!loading) {
+          fetchQuizQuestions();
+        }
+      }, 2000);
+    }
+    if (questions.length > 0 || error) {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    }
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [questions, error, loading, fetchQuizQuestions]);
 
   const handleAnswerChange = (questionId: string, choiceId: string) => {
     setSelectedAnswers((prev) => ({
@@ -205,7 +241,17 @@ export default function QuizPage() {
 
   return (
     <div className="min-h-screen bg-gray-100 p-8">
-      <h1 className="text-3xl font-bold text-gray-900 mb-6">Take Quiz</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-3xl font-bold text-gray-900">Take Quiz</h1>
+        <a
+          href={`/backend-api/public/documents/${documentId}/file`}
+          target="_blank"
+          rel="noreferrer"
+          className="text-indigo-600 hover:text-indigo-800 text-sm"
+        >
+          View Original File
+        </a>
+      </div>
       {questions.length === 0 && !loading && (
         <p>No questions found for this document. It might still be processing.</p>
       )}

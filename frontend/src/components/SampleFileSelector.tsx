@@ -277,6 +277,15 @@ export default function SampleFileSelector() {
           >
             View Questions
           </Link>
+          <span className="mx-2 text-gray-400">•</span>
+          <a
+            href={`/backend-api/public/documents/${documentId}/file`}
+            target="_blank"
+            rel="noreferrer"
+            className="text-[#1E3A5F] hover:text-[#16314D]"
+          >
+            View File
+          </a>
           <p className="text-xs text-gray-600 mt-1">
             If you don’t see questions immediately, the document may still be processing.
           </p>

@@ -76,50 +76,29 @@ import shutil
 def _tesseract_available() -> bool:
     if TESSERACT_PATH and os.path.exists(TESSERACT_PATH):
         return True
+    cmd = getattr(pytesseract.pytesseract, "tesseract_cmd", None)
+    if cmd and os.path.exists(cmd):
+        return True
     return shutil.which("tesseract") is not None
 
 def _download_file_from_supabase(file_path: str, local_path: str):
-    """
-    Simulates downloading a file from Supabase Storage.
-    In a real scenario, you'd use the Supabase Python SDK.
-    For now, assume the file is available at `file_path` on the local filesystem
-    (e.g., mounted volume in Docker, or accessible by the AI service).
-    Or, more realistically for a microservice, Laravel would pass the file content directly
-    or a signed URL for direct download.
-    For this MVP, we'll assume a dummy local file for testing purposes.
-    """
-    # Placeholder: In a real scenario, this would involve Supabase client
-    # Example:
-    # from supabase import create_client, Client
-    # supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    # bucket_name = file_path.split('/')[0] # e.g., 'documents'
-    # path_in_bucket = '/'.join(file_path.split('/')[1:])
-    # response = supabase.storage.from_(bucket_name).download(path_in_bucket)
-    # with open(local_path, 'wb') as f:
-    #     f.write(response)
-    
-    # For local dev, try to find the file in the backend storage
-    # We are in ai-service/app/services.py -> ../../backend/storage/app/private
     try:
-        base_storage_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../backend/storage/app/private"))
-        source_file_path = os.path.join(base_storage_path, file_path)
-        alt_source_file_path = os.path.join(base_storage_path, "private", file_path)
-        if os.path.exists(source_file_path):
-            shutil.copy2(source_file_path, local_path)
-            print(f"Copied '{source_file_path}' to '{local_path}'")
-            return
-        if os.path.exists(alt_source_file_path):
-            shutil.copy2(alt_source_file_path, local_path)
-            print(f"Copied '{alt_source_file_path}' to '{local_path}'")
-            return
-        print(f"Source file not found at: {source_file_path} or {alt_source_file_path}")
-    except Exception as e:
-        print(f"Error trying to copy file from backend: {e}")
-
-    # Fallback to dummy file if copy fails
-    with open(local_path, 'w') as f:
-        f.write("This is dummy content for " + file_path + ". Real content would be extracted here.")
-    print(f"Simulated download of '{file_path}' to '{local_path}'")
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        base_storage_app = os.path.join(repo_root, "backend", "storage", "app")
+        candidates = []
+        candidates.append(os.path.join(base_storage_app, file_path))
+        candidates.append(os.path.join(base_storage_app, "private", file_path))
+        if file_path.startswith("public/"):
+            rel = file_path.split("public/", 1)[1]
+            candidates.append(os.path.join(base_storage_app, "public", rel))
+        for sp in candidates:
+            if os.path.exists(sp):
+                shutil.copy2(sp, local_path)
+                print(f"Copied '{sp}' to '{local_path}'")
+                return
+        raise FileNotFoundError(f"Source file not found for '{file_path}' in storage app/private/public")
+    except Exception:
+        raise
 
 
 def _extract_text_from_pdf(file_path: str) -> str:
@@ -516,7 +495,7 @@ Here is the text:
 
 def _generate_mcqs(text: str) -> List[QuestionData]:
     cleaned = re.sub(r"\s+", " ", text).strip()
-    tokens = re.findall(r"[A-Za-z][A-Za-z\\-']+", cleaned.lower())
+    tokens = re.findall(r"[A-Za-z]+(?:[-’'][A-Za-z]+)*", cleaned.lower())
     stop = {
         "the","and","for","that","with","this","from","into","your","have","will","must","should",
         "are","was","were","is","of","to","in","on","by","it","as","be","or","an","a","at","we",
