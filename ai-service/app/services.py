@@ -30,6 +30,17 @@ AI_SERVICE_SECRET = os.environ.get("AI_SERVICE_SECRET", "supersecretkey123")
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "http://localhost:54321") # Placeholder
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...") # Placeholder
 TESSERACT_PATH = os.environ.get("TESSERACT_PATH")
+OCR_PROVIDER = os.environ.get("OCR_PROVIDER")  # e.g., "ocrspace"
+OCRSPACE_API_KEY = os.environ.get("OCRSPACE_API_KEY")
+OCR_CHAIN = [p.strip() for p in os.environ.get("OCR_CHAIN", "").split(",") if p.strip()]
+T3XTR_API_URL = os.environ.get("T3XTR_API_URL")
+T3XTR_API_KEY = os.environ.get("T3XTR_API_KEY")
+APDF_API_URL = os.environ.get("APDF_API_URL")
+APDF_API_KEY = os.environ.get("APDF_API_KEY")
+TEXTMILL_API_URL = os.environ.get("TEXTMILL_API_URL")
+TEXTMILL_API_KEY = os.environ.get("TEXTMILL_API_KEY")
+ZAMZAR_API_URL = os.environ.get("ZAMZAR_API_URL")
+ZAMZAR_API_KEY = os.environ.get("ZAMZAR_API_KEY")
 if TESSERACT_PATH:
     try:
         pytesseract.pytesseract.tesseract_cmd = TESSERACT_PATH
@@ -289,6 +300,145 @@ def _extract_text_from_image(file_path: str) -> str:
         print(f"OCR failed for {file_path}: {e}")
         return ""
 
+async def _ocr_with_ocrspace(file_path: str) -> str:
+    if not OCRSPACE_API_KEY:
+        return ""
+    try:
+        url = "https://api.ocr.space/parse/image"
+        data = {
+            "language": "eng",
+            "isOverlayRequired": False,
+            "OCREngine": 2,
+        }
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            with open(file_path, "rb") as f:
+                files = {"file": (os.path.basename(file_path), f, "application/octet-stream")}
+                headers = {"apikey": OCRSPACE_API_KEY}
+                resp = await client.post(url, data=data, files=files, headers=headers)
+                resp.raise_for_status()
+                payload = resp.json()
+        if isinstance(payload, dict) and payload.get("ParsedResults"):
+            texts: List[str] = []
+            for pr in payload["ParsedResults"]:
+                t = pr.get("ParsedText") or ""
+                if isinstance(t, str) and t.strip():
+                    texts.append(t)
+            return "\n".join(texts).strip()
+        return ""
+    except Exception as e:
+        print(f"OCR.Space request failed: {e}")
+        return ""
+async def _ocr_with_t3xtr(file_path: str) -> str:
+    if not (T3XTR_API_URL and T3XTR_API_KEY):
+        return ""
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            with open(file_path, "rb") as f:
+                files = {"file": (os.path.basename(file_path), f, "application/pdf")}
+                headers = {"Authorization": f"Bearer {T3XTR_API_KEY}"}
+                resp = await client.post(T3XTR_API_URL, files=files, headers=headers)
+                resp.raise_for_status()
+                payload = resp.json()
+        for k in ("text", "data", "result"):
+            v = payload.get(k)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+            if isinstance(v, dict):
+                for kk in ("text", "content"):
+                    vv = v.get(kk)
+                    if isinstance(vv, str) and vv.strip():
+                        return vv.strip()
+        return ""
+    except Exception as e:
+        print(f"T3XTR request failed: {e}")
+        return ""
+async def _ocr_with_apdf(file_path: str) -> str:
+    if not (APDF_API_URL and APDF_API_KEY):
+        return ""
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            with open(file_path, "rb") as f:
+                files = {"file": (os.path.basename(file_path), f, "application/pdf")}
+                headers = {"Authorization": f"Bearer {APDF_API_KEY}"}
+                resp = await client.post(APDF_API_URL, files=files, headers=headers)
+                resp.raise_for_status()
+                payload = resp.json()
+        for k in ("text", "content", "result"):
+            v = payload.get(k)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        return ""
+    except Exception as e:
+        print(f"aPDF request failed: {e}")
+        return ""
+async def _ocr_with_textmill(file_path: str) -> str:
+    if not (TEXTMILL_API_URL and TEXTMILL_API_KEY):
+        return ""
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            with open(file_path, "rb") as f:
+                files = {"file": (os.path.basename(file_path), f, "application/octet-stream")}
+                headers = {"Authorization": f"Bearer {TEXTMILL_API_KEY}"}
+                resp = await client.post(TEXTMILL_API_URL, files=files, headers=headers)
+                resp.raise_for_status()
+                payload = resp.json()
+        for k in ("text", "content"):
+            v = payload.get(k)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        return ""
+    except Exception as e:
+        print(f"TextMill request failed: {e}")
+        return ""
+async def _convert_docx_with_zamzar(file_path: str) -> str:
+    if not (ZAMZAR_API_URL and ZAMZAR_API_KEY):
+        return ""
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            with open(file_path, "rb") as f:
+                files = {"source_file": (os.path.basename(file_path), f, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")}
+                data = {"target_format": "txt"}
+                headers = {"Authorization": f"Bearer {ZAMZAR_API_KEY}"}
+                resp = await client.post(ZAMZAR_API_URL, data=data, files=files, headers=headers)
+                resp.raise_for_status()
+                if resp.headers.get("content-type", "").startswith("text/"):
+                    return (resp.text or "").strip()
+                payload = resp.json()
+        for k in ("text", "content"):
+            v = payload.get(k)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        return ""
+    except Exception as e:
+        print(f"Zamzar request failed: {e}")
+        return ""
+async def _try_provider_chain(file_path: str, file_extension: str) -> str:
+    providers = OCR_CHAIN[:] if OCR_CHAIN else []
+    if not providers:
+        base = ["ocrspace", "t3xtr", "apdf", "textmill"]
+        if file_extension == "docx":
+            base.append("zamzar")
+        providers = base
+    for p in providers:
+        try:
+            if p == "ocrspace":
+                t = await _ocr_with_ocrspace(file_path)
+            elif p == "t3xtr":
+                t = await _ocr_with_t3xtr(file_path)
+            elif p == "apdf":
+                t = await _ocr_with_apdf(file_path)
+            elif p == "textmill":
+                t = await _ocr_with_textmill(file_path)
+            elif p == "zamzar" and file_extension == "docx":
+                t = await _convert_docx_with_zamzar(file_path)
+            else:
+                t = ""
+            if isinstance(t, str) and t.strip():
+                return t.strip()
+        except Exception as e:
+            print(f"OCR provider {p} failed: {e}")
+            continue
+    return ""
 def _generate_mcqs_with_ollama(text: str) -> List[QuestionData]:
     """Generates Multiple Choice Questions using Ollama."""
     # This is a placeholder for the actual Ollama API call
@@ -474,6 +624,18 @@ async def process_document_logic(document_id: uuid.UUID, file_path: str):
                         await post_progress(62, "OCR unavailable: install Tesseract or set TESSERACT_PATH", 20, "processing")
                     except Exception:
                         pass
+                    try:
+                        await post_progress(66, "Sending to external OCR provider", 18, "processing")
+                    except Exception:
+                        pass
+                    try:
+                        extracted_text = await _try_provider_chain(local_file_path, file_extension)
+                    except Exception:
+                        extracted_text = ""
+                    try:
+                        await post_progress(70, f"OCR provider text len={len(extracted_text)}", 15, "processing")
+                    except Exception:
+                        await post_progress(70, "OCR provider processed", 15, "processing")
                 else:
                     try:
                         extracted_text = _extract_text_from_pdf_images(local_file_path)
@@ -496,7 +658,12 @@ async def process_document_logic(document_id: uuid.UUID, file_path: str):
                         await post_progress(82, "Proceeding with limited text extraction due to OCR unavailability", 8, "processing")
                     except Exception:
                         pass
-                    extracted_text = extracted_text.strip() or "Limited extraction available; OCR not installed."
+                    try:
+                        extracted_text = await _try_provider_chain(local_file_path, file_extension)
+                    except Exception:
+                        extracted_text = ""
+                    if not extracted_text.strip():
+                        extracted_text = "Limited extraction available; OCR not installed."
                 else:
                     raise ValueError("No text extracted from document.")
 
