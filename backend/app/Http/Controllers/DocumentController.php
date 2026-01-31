@@ -14,6 +14,7 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Log;
 use App\Models\User;
+use Illuminate\Support\Facades\Cache;
 
 class DocumentController extends Controller
 {
@@ -41,10 +42,15 @@ class DocumentController extends Controller
         $storagePath = 'documents/' . Auth::id() . '/' . Str::uuid() . '.' . $fileExtension;
         Storage::put($storagePath, file_get_contents($file));
 
-        $document = Auth::user()->documents()->create([
+        $user = Auth::user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated'], 401);
+        }
+        $document = Document::create([
+            'user_id' => $user->id,
             'title' => $originalFileName,
             'storage_path' => $storagePath,
-            'status' => DocumentStatus::UPLOADING, // Initial status
+            'status' => DocumentStatus::UPLOADING,
         ]);
 
         ProcessDocumentJob::dispatch($document);
@@ -91,9 +97,8 @@ class DocumentController extends Controller
         $targetName = Str::uuid() . '.' . $extension;
         $targetPath = 'documents/' . $user->id . '/' . $targetName;
 
-        // Store under private/documents to align with AI service lookup
         $content = Storage::get($samplePath);
-        Storage::put('private/' . $targetPath, $content);
+        Storage::put($targetPath, $content);
 
         $document = Document::create([
             'id' => (string) Str::uuid(),
@@ -127,7 +132,7 @@ class DocumentController extends Controller
         $targetName = Str::uuid() . '.' . $extension;
         $targetPath = 'documents/' . $user->id . '/' . $targetName;
 
-        Storage::put('private/' . $targetPath, file_get_contents($file));
+        Storage::put($targetPath, file_get_contents($file));
 
         $document = Document::create([
             'id' => (string) Str::uuid(),
@@ -143,6 +148,46 @@ class DocumentController extends Controller
             'message' => 'Document uploaded and processing initiated.',
             'document' => $document,
         ], 202)->withHeaders($this->corsHeaders());
+    }
+
+    /**
+     * Public: Get progress info for a document.
+     */
+    public function showProgress(Document $document)
+    {
+        $key = 'doc_progress_'.$document->id;
+        $progress = Cache::get($key);
+        if (!$progress) {
+            $status = (string) $document->status->value;
+            $progress = [
+                'percent' => $status === 'completed' ? 100 : ($status === 'processing' ? 50 : 10),
+                'message' => $status,
+                'eta_seconds' => $status === 'completed' ? 0 : 30,
+                'status' => $status,
+            ];
+        }
+        if ($document->status === DocumentStatus::FAILED) {
+            $progress['error'] = $document->error_message;
+        }
+        return response()->json($progress)->withHeaders($this->corsHeaders());
+    }
+
+    /**
+     * Internal: Update progress for a document.
+     */
+    public function updateProgress(Request $request, Document $document)
+    {
+        if ($request->header('X-Internal-Secret') !== env('AI_SERVICE_SECRET')) {
+            abort(403, 'Unauthorized');
+        }
+        $data = $request->validate([
+            'percent' => 'required|integer|min:0|max:100',
+            'message' => 'required|string',
+            'eta_seconds' => 'nullable|integer|min:0',
+            'status' => 'nullable|string',
+        ]);
+        Cache::put('doc_progress_'.$document->id, $data, now()->addMinutes(5));
+        return response()->json(['ok' => true])->withHeaders($this->corsHeaders());
     }
 
     /**
@@ -188,6 +233,12 @@ class DocumentController extends Controller
         }
 
         try {
+            if ($request->input('status') === 'failed') {
+                $document->status = DocumentStatus::FAILED;
+                $document->error_message = $request->input('error_message') ?: 'Processing failed';
+                $document->save();
+                return response()->json(['message' => 'Failure recorded.'])->withHeaders($this->corsHeaders());
+            }
             $request->validate([
                 'questions' => 'required|array',
                 'questions.*.question_text' => 'required|string',
@@ -258,6 +309,19 @@ class DocumentController extends Controller
         $questions = $document->questions()->with('choices')->get();
 
         return response()->json($questions)->withHeaders($this->corsHeaders());
+    }
+
+    /**
+     * Public: Retry processing for a document.
+     */
+    public function retry(Document $document)
+    {
+        Cache::forget('doc_progress_'.$document->id);
+        $document->status = DocumentStatus::UPLOADING;
+        $document->error_message = null;
+        $document->save();
+        ProcessDocumentJob::dispatch($document);
+        return response()->json(['message' => 'Retry initiated.', 'document' => $document], 202)->withHeaders($this->corsHeaders());
     }
 
     protected function corsHeaders(): array

@@ -7,3 +7,5 @@ pytesseract
 pypdf
 python-docx
 python-magic
+pymupdf
+pdfminer.six

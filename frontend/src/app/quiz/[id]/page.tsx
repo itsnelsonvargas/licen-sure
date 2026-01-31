@@ -62,13 +62,33 @@ export default function QuizPage() {
       if (status === "authenticated") {
         await api.get("/sanctum/csrf-cookie");
         const response = await api.get(`/api/documents/${documentId}/quiz`);
-        setQuestions(response.data);
+        const data = response.data as unknown;
+        if (Array.isArray(data)) {
+          setQuestions(data as Question[]);
+        } else {
+          setQuestions([]);
+          const msg =
+            typeof data === "object" && data && "message" in (data as object)
+              ? (data as { message?: string }).message
+              : undefined;
+          setError(msg || "Quiz not ready for this document.");
+        }
       } else {
-        const response = await fetch(`/backend-api/public/documents/${documentId}/quiz`, {
+        const res = await fetch(`/backend-api/public/documents/${documentId}/quiz`, {
           method: "GET",
           headers: { Accept: "application/json" },
-        }).then((r) => r.json());
-        setQuestions(response);
+        });
+        const data = (await res.json()) as unknown;
+        if (Array.isArray(data)) {
+          setQuestions(data as Question[]);
+        } else {
+          setQuestions([]);
+          const msg =
+            typeof data === "object" && data && "message" in (data as object)
+              ? (data as { message?: string }).message
+              : undefined;
+          setError(msg || "Quiz not ready for this document.");
+        }
       }
     } catch (err) {
       console.error("Failed to fetch quiz questions:", err);

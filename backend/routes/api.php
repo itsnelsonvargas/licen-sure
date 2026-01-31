@@ -32,6 +32,9 @@ Route::get('/samples', [DocumentController::class, 'listSamplePdfs']);
 Route::post('/documents/from-sample', [DocumentController::class, 'storeFromSample']);
 Route::get('/public/documents/{document}/quiz', [DocumentController::class, 'showQuizQuestionsPublic']);
 Route::post('/documents/guest-upload', [DocumentController::class, 'storeGuestUpload']);
+Route::get('/documents/{document}/progress', [DocumentController::class, 'showProgress']);
+Route::post('/documents/{document}/progress', [DocumentController::class, 'updateProgress']);
+Route::post('/documents/{document}/retry', [DocumentController::class, 'retry']);
 
 // CORS preflight handler for API
 Route::options('/{any}', function (Request $request) {
