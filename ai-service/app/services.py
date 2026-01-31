@@ -83,7 +83,7 @@ def _tesseract_available() -> bool:
 
 def _download_file_from_supabase(file_path: str, local_path: str):
     try:
-        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
         base_storage_app = os.path.join(repo_root, "backend", "storage", "app")
         candidates = []
         candidates.append(os.path.join(base_storage_app, file_path))
