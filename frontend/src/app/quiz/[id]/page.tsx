@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import api from "@/lib/api";
@@ -33,7 +33,7 @@ export default function QuizPage() {
   const params = useParams();
   const documentId = params.id as string;
   const router = useRouter();
-  const { data: session, status } = useSession();
+  const { status } = useSession();
 
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,35 +43,44 @@ export default function QuizPage() {
   >({}); // { questionId: choiceId }
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [quizResult, setQuizResult] = useState<QuizResult | null>(null);
-
-  useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push("/login");
-      return;
+  const getErrorMessage = (e: unknown) => {
+    if (typeof e === "string") return e;
+    if (e && typeof e === "object") {
+      const obj = e as {
+        response?: { data?: { message?: string } };
+        message?: string;
+      };
+      return obj.response?.data?.message || obj.message || "Unexpected error";
     }
-    if (status === "authenticated") {
-      fetchQuizQuestions();
-    }
-  }, [status, documentId, router]);
+    return "Unexpected error";
+  };
 
-  const fetchQuizQuestions = async () => {
+  const fetchQuizQuestions = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      await api.get("/sanctum/csrf-cookie");
-      const response = await api.get(`/documents/${documentId}/quiz`);
-      setQuestions(response.data);
-    } catch (err: any) {
+      if (status === "authenticated") {
+        await api.get("/sanctum/csrf-cookie");
+        const response = await api.get(`/api/documents/${documentId}/quiz`);
+        setQuestions(response.data);
+      } else {
+        const response = await fetch(`/backend-api/public/documents/${documentId}/quiz`, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+        }).then((r) => r.json());
+        setQuestions(response);
+      }
+    } catch (err) {
       console.error("Failed to fetch quiz questions:", err);
-      setError(
-        err.response?.data?.message ||
-          err.message ||
-          "Failed to load quiz questions."
-      );
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
-  };
+  }, [status, documentId]);
+
+  useEffect(() => {
+    fetchQuizQuestions();
+  }, [fetchQuizQuestions]);
 
   const handleAnswerChange = (questionId: string, choiceId: string) => {
     setSelectedAnswers((prev) => ({
@@ -91,11 +100,9 @@ export default function QuizPage() {
       });
       setQuizResult(response.data);
       setQuizSubmitted(true);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Failed to submit quiz:", err);
-      setError(
-        err.response?.data?.message || err.message || "Failed to submit quiz."
-      );
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -216,12 +223,19 @@ export default function QuizPage() {
         <button
           onClick={handleSubmitQuiz}
           disabled={
-            Object.keys(selectedAnswers).length !== questions.length || loading
+            status !== "authenticated" ||
+            Object.keys(selectedAnswers).length !== questions.length ||
+            loading
           }
           className="mt-8 px-6 py-3 text-lg font-medium text-white bg-green-600 border border-transparent rounded-md shadow-sm hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Submit Quiz
         </button>
+      )}
+      {status !== "authenticated" && questions.length > 0 && (
+        <p className="mt-2 text-sm text-gray-700">
+          Login to submit your answers and track your score.
+        </p>
       )}
     </div>
   );

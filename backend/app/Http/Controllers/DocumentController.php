@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Log;
+use App\Models\User;
 
 class DocumentController extends Controller
 {
@@ -52,6 +53,123 @@ class DocumentController extends Controller
             'message' => 'Document uploaded and processing initiated.',
             'document' => $document,
         ], 202);
+    }
+
+    /**
+     * Public: List available sample PDFs from storage/app/public.
+     */
+    public function listSamplePdfs()
+    {
+        $files = collect(Storage::files('public'))
+            ->filter(fn ($path) => str_ends_with(strtolower($path), '.pdf'))
+            ->map(fn ($path) => [
+                'name' => basename($path),
+                'path' => $path,
+            ])
+            ->values();
+
+        return response()->json(['samples' => $files])->withHeaders($this->corsHeaders());
+    }
+
+    /**
+     * Public: Create a Document from a selected sample file and dispatch processing.
+     * Expects: { path: "public/<file>.pdf" }
+     */
+    public function storeFromSample(Request $request)
+    {
+        $request->validate([
+            'path' => 'required|string',
+        ]);
+
+        $samplePath = $request->input('path');
+        if (!Storage::exists($samplePath)) {
+            return response()->json(['message' => 'Sample file not found'], 404);
+        }
+
+        $user = Auth::user() ?? $this->ensureGuestUser();
+        $extension = pathinfo($samplePath, PATHINFO_EXTENSION);
+        $targetName = Str::uuid() . '.' . $extension;
+        $targetPath = 'documents/' . $user->id . '/' . $targetName;
+
+        // Store under private/documents to align with AI service lookup
+        $content = Storage::get($samplePath);
+        Storage::put('private/' . $targetPath, $content);
+
+        $document = Document::create([
+            'id' => (string) Str::uuid(),
+            'user_id' => $user->id,
+            'title' => basename($samplePath),
+            'storage_path' => $targetPath,
+            'status' => DocumentStatus::UPLOADING,
+        ]);
+
+        ProcessDocumentJob::dispatch($document);
+
+        return response()->json([
+            'message' => 'Sample document selected and processing initiated.',
+            'document' => $document,
+        ], 202)->withHeaders($this->corsHeaders());
+    }
+
+    /**
+     * Public: Upload a PDF/DOCX/Image without authentication and dispatch processing.
+     */
+    public function storeGuestUpload(Request $request)
+    {
+        $request->validate([
+            'document' => 'required|file|max:20480',
+        ]);
+
+        $user = Auth::user() ?? $this->ensureGuestUser();
+        $file = $request->file('document');
+        $extension = $file->getClientOriginalExtension();
+        $originalName = $file->getClientOriginalName();
+        $targetName = Str::uuid() . '.' . $extension;
+        $targetPath = 'documents/' . $user->id . '/' . $targetName;
+
+        Storage::put('private/' . $targetPath, file_get_contents($file));
+
+        $document = Document::create([
+            'id' => (string) Str::uuid(),
+            'user_id' => $user->id,
+            'title' => $originalName,
+            'storage_path' => $targetPath,
+            'status' => DocumentStatus::UPLOADING,
+        ]);
+
+        ProcessDocumentJob::dispatch($document);
+
+        return response()->json([
+            'message' => 'Document uploaded and processing initiated.',
+            'document' => $document,
+        ], 202)->withHeaders($this->corsHeaders());
+    }
+
+    /**
+     * Public: Show quiz questions for a document without auth ownership checks.
+     */
+    public function showQuizQuestionsPublic(Document $document)
+    {
+        if ($document->status !== DocumentStatus::COMPLETED) {
+            return response()->json(['message' => 'Quiz not ready for this document.'], 404)->withHeaders($this->corsHeaders());
+        }
+
+        $questions = $document->questions()->with('choices')->get();
+        return response()->json($questions)->withHeaders($this->corsHeaders());
+    }
+
+    /**
+     * Ensure a guest user exists for unauthenticated flows.
+     */
+    protected function ensureGuestUser(): User
+    {
+        return User::firstOrCreate(
+            ['email' => 'guest@example.com'],
+            [
+                'name' => 'Guest User',
+                'password' => bcrypt(Str::random(12)),
+            ]
+        );
     }
 
     /**
@@ -98,7 +216,7 @@ class DocumentController extends Controller
             $document->error_message = null; // Clear any previous errors
             $document->save();
 
-            return response()->json(['message' => 'Questions processed successfully.']);
+            return response()->json(['message' => 'Questions processed successfully.'])->withHeaders($this->corsHeaders());
 
         } catch (ValidationException $e) {
             $document->status = DocumentStatus::FAILED;
@@ -108,7 +226,7 @@ class DocumentController extends Controller
                 'document_id' => $document->id,
                 'errors' => $e->errors(),
             ]);
-            return response()->json(['message' => 'Validation error', 'errors' => $e->errors()], 422);
+            return response()->json(['message' => 'Validation error', 'errors' => $e->errors()], 422)->withHeaders($this->corsHeaders());
         } catch (\Exception $e) {
             $document->status = DocumentStatus::FAILED;
             $document->error_message = 'AI callback processing failed: ' . $e->getMessage();
@@ -117,7 +235,7 @@ class DocumentController extends Controller
                 'document_id' => $document->id,
                 'error' => $e->getMessage(),
             ]);
-            return response()->json(['message' => 'An unexpected error occurred.'], 500);
+            return response()->json(['message' => 'An unexpected error occurred.'], 500)->withHeaders($this->corsHeaders());
         }
     }
 
@@ -139,6 +257,16 @@ class DocumentController extends Controller
         // Load questions with their choices
         $questions = $document->questions()->with('choices')->get();
 
-        return response()->json($questions);
+        return response()->json($questions)->withHeaders($this->corsHeaders());
+    }
+
+    protected function corsHeaders(): array
+    {
+        return [
+            'Access-Control-Allow-Origin' => 'http://localhost:3000',
+            'Access-Control-Allow-Methods' => 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers' => 'Content-Type, X-Requested-With, Accept, Origin, Authorization',
+            'Access-Control-Allow-Credentials' => 'true',
+        ];
     }
 }

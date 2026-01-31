@@ -1,4 +1,5 @@
 import Link from "next/link";
+import SampleFileSelector from "@/components/SampleFileSelector";
 
 export default function Home() {
   return (
@@ -86,6 +87,9 @@ export default function Home() {
                 </Link>
               </div>
             </div>
+          </div>
+          <div className="mt-6">
+            <SampleFileSelector />
           </div>
         </div>
       </section>

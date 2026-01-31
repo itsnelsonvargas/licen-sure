@@ -26,3 +26,20 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
 // Internal API endpoint for AI service callback (needs secure handling)
 Route::post('/documents/{document}/questions', [DocumentController::class, 'processAiCallback']);
+
+// Public endpoints for unauthenticated flow
+Route::get('/samples', [DocumentController::class, 'listSamplePdfs']);
+Route::post('/documents/from-sample', [DocumentController::class, 'storeFromSample']);
+Route::get('/public/documents/{document}/quiz', [DocumentController::class, 'showQuizQuestionsPublic']);
+Route::post('/documents/guest-upload', [DocumentController::class, 'storeGuestUpload']);
+
+// CORS preflight handler for API
+Route::options('/{any}', function (Request $request) {
+    $origin = $request->header('Origin', 'http://localhost:3000');
+    return response('', 204)->withHeaders([
+        'Access-Control-Allow-Origin' => $origin,
+        'Access-Control-Allow-Methods' => 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers' => 'Content-Type, X-Requested-With, Accept, Origin, Authorization',
+        'Access-Control-Allow-Credentials' => 'true',
+    ]);
+})->where('any', '.*');
