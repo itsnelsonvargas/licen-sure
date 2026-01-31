@@ -91,11 +91,52 @@ export default function Home() {
       </section>
 
       <footer className="border-t border-[#E2E8F0] bg-white">
-        <div className="mx-auto max-w-6xl px-6 py-8 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="text-sm text-gray-600">© {new Date().getFullYear()} Licen-sure</div>
-          <div className="flex items-center gap-6 text-sm">
-            <Link href="/login" className="text-[#1E3A5F] hover:text-[#16314D]">Login</Link>
-            <Link href="/register" className="text-[#1E3A5F] hover:text-[#16314D]">Register</Link>
+        <div className="mx-auto max-w-6xl px-6 py-12 grid grid-cols-1 md:grid-cols-4 gap-8">
+          <div className="md:col-span-2">
+            <div className="text-[#1E3A5F] text-lg font-medium">Licen-sure</div>
+            <p className="mt-2 text-sm text-gray-700 leading-relaxed max-w-md">
+              Calm, structured quizzes generated from your documents to reduce anxiety and support long study sessions.
+            </p>
+            <div className="mt-4 text-sm text-gray-600">
+              Contact:{" "}
+              <a href="mailto:support@licensure.local" className="text-[#1E3A5F] hover:text-[#16314D]">
+                support@licensure.local
+              </a>
+            </div>
+          </div>
+          <div>
+            <div className="text-sm font-semibold text-[#4A5D73]">Product</div>
+            <ul className="mt-2 space-y-2 text-sm">
+              <li>
+                <Link href="/dashboard" className="text-[#1E3A5F] hover:text-[#16314D]">Dashboard</Link>
+              </li>
+              <li>
+                <Link href="/login" className="text-[#1E3A5F] hover:text-[#16314D]">Login</Link>
+              </li>
+              <li>
+                <Link href="/register" className="text-[#1E3A5F] hover:text-[#16314D]">Register</Link>
+              </li>
+            </ul>
+          </div>
+          <div>
+            <div className="text-sm font-semibold text-[#4A5D73]">Legal</div>
+            <ul className="mt-2 space-y-2 text-sm">
+              <li>
+                <Link href="#" className="text-[#1E3A5F] hover:text-[#16314D]">Privacy</Link>
+              </li>
+              <li>
+                <Link href="#" className="text-[#1E3A5F] hover:text-[#16314D]">Terms</Link>
+              </li>
+            </ul>
+          </div>
+        </div>
+        <div className="border-t border-[#E2E8F0]">
+          <div className="mx-auto max-w-6xl px-6 py-8 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-gray-600">
+            <div>© {new Date().getFullYear()} Licen-sure</div>
+            <div className="flex items-center gap-6">
+              <Link href="#" className="text-[#1E3A5F] hover:text-[#16314D]">Accessibility</Link>
+              <Link href="#" className="text-[#1E3A5F] hover:text-[#16314D]">Status</Link>
+            </div>
           </div>
         </div>
       </footer>
