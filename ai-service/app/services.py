@@ -27,6 +27,7 @@ import random
 LARAVEL_CALLBACK_URL = os.environ.get("LARAVEL_CALLBACK_URL", "http://localhost:8000/api/documents/{document_id}/questions")
 LARAVEL_PROGRESS_URL = os.environ.get("LARAVEL_PROGRESS_URL", "http://localhost:8000/api/documents/{document_id}/progress")
 AI_SERVICE_SECRET = os.environ.get("AI_SERVICE_SECRET", "supersecretkey123")
+DISABLE_LARAVEL_CALLBACKS = str(os.environ.get("DISABLE_LARAVEL_CALLBACKS", "")).lower() in {"1","true","yes"}
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "http://localhost:54321") # Placeholder
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...") # Placeholder
 TESSERACT_PATH = os.environ.get("TESSERACT_PATH")
@@ -101,7 +102,7 @@ def _tesseract_available() -> bool:
 
 def _download_file_from_supabase(file_path: str, local_path: str):
     try:
-        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
         base_storage_app = os.path.join(repo_root, "backend", "storage", "app")
         candidates = []
         candidates.append(os.path.join(base_storage_app, file_path))
@@ -567,6 +568,8 @@ async def process_document_logic(document_id: uuid.UUID, file_path: str):
     async def post_progress(percent: int, message: str, eta_seconds: int, status: str = "processing"):
         tries = 0
         last_err = None
+        if DISABLE_LARAVEL_CALLBACKS:
+            return
         while tries < 3:
             tries += 1
             try:
@@ -672,6 +675,8 @@ async def process_document_logic(document_id: uuid.UUID, file_path: str):
 
         # Call back to Laravel
         tries = 0
+        if DISABLE_LARAVEL_CALLBACKS:
+            callback_success = True
         while tries < 3 and not callback_success:
             tries += 1
             try:
@@ -700,7 +705,7 @@ async def process_document_logic(document_id: uuid.UUID, file_path: str):
         print(f"Error processing document {document_id}: {err_msg}{diag}")
         # In a real app, you'd send a 'failed' status back to Laravel
         # For this MVP, we'll just log and let the Laravel job eventually timeout/fail if callback didn't happen
-        if not callback_success:
+        if not callback_success and not DISABLE_LARAVEL_CALLBACKS:
             # Attempt to send a failure status to Laravel if the initial callback failed
             try:
                 async with httpx.AsyncClient() as client:
