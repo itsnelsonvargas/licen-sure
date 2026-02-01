@@ -41,9 +41,25 @@ TEXTMILL_API_URL = os.environ.get("TEXTMILL_API_URL")
 TEXTMILL_API_KEY = os.environ.get("TEXTMILL_API_KEY")
 ZAMZAR_API_URL = os.environ.get("ZAMZAR_API_URL")
 ZAMZAR_API_KEY = os.environ.get("ZAMZAR_API_KEY")
+def _resolve_tesseract_path(config_path: str):
+    try:
+        if not config_path:
+            return None
+        p = config_path
+        if os.path.isdir(p):
+            exe = os.path.join(p, "tesseract.exe")
+            if os.path.exists(exe):
+                return exe
+        if p.lower().endswith("tesseract.exe") and os.path.exists(p):
+            return p
+        return p
+    except Exception:
+        return config_path
 if TESSERACT_PATH:
     try:
-        pytesseract.pytesseract.tesseract_cmd = TESSERACT_PATH
+        _resolved = _resolve_tesseract_path(TESSERACT_PATH)
+        if _resolved:
+            pytesseract.pytesseract.tesseract_cmd = _resolved
     except Exception as _e:
         pass
 def _ensure_tesseract_cmd():
@@ -74,8 +90,10 @@ _ensure_tesseract_cmd()
 
 import shutil
 def _tesseract_available() -> bool:
-    if TESSERACT_PATH and os.path.exists(TESSERACT_PATH):
-        return True
+    if TESSERACT_PATH:
+        rp = _resolve_tesseract_path(TESSERACT_PATH)
+        if rp and os.path.exists(rp):
+            return True
     cmd = getattr(pytesseract.pytesseract, "tesseract_cmd", None)
     if cmd and os.path.exists(cmd):
         return True
