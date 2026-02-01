@@ -341,8 +341,9 @@ class DocumentController extends Controller
 
     protected function corsHeaders(): array
     {
+        $origin = request()->header('Origin', 'http://localhost:3000');
         return [
-            'Access-Control-Allow-Origin' => 'http://localhost:3000',
+            'Access-Control-Allow-Origin' => $origin,
             'Access-Control-Allow-Methods' => 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
             'Access-Control-Allow-Headers' => 'Content-Type, X-Requested-With, Accept, Origin, Authorization',
             'Access-Control-Allow-Credentials' => 'true',

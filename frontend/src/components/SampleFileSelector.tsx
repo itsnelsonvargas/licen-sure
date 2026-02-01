@@ -28,7 +28,9 @@ export default function SampleFileSelector() {
       const obj = e as {
         response?: { data?: { message?: string } };
         message?: string;
+        code?: string;
       };
+      if (obj.code === "ERR_NETWORK") return "Backend unreachable. Check backend URL and server status.";
       return obj.response?.data?.message || obj.message || "Unexpected error";
     }
     return "Unexpected error";

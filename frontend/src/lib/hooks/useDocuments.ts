@@ -27,9 +27,13 @@ export function useDocuments() {
       setDocuments(response.data);
     } catch (err: any) {
       console.error("Failed to fetch documents:", err);
-      setError(
-        err.response?.data?.message || err.message || "Failed to fetch documents."
-      );
+      if (err?.code === "ERR_NETWORK") {
+        setError("Backend unreachable. Check backend URL and server status.");
+      } else {
+        setError(
+          err.response?.data?.message || err.message || "Failed to fetch documents."
+        );
+      }
     } finally {
       setLoading(false);
     }
