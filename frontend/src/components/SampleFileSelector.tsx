@@ -22,6 +22,8 @@ export default function SampleFileSelector() {
   const [progress, setProgress] = useState<Progress | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [diagnostics, setDiagnostics] = useState<{ message: string; percent: number; ts: number }[]>([]);
+  const [startTs, setStartTs] = useState<number | null>(null);
+  const [elapsed, setElapsed] = useState<number>(0);
   const getErrorMessage = (e: unknown) => {
     if (typeof e === "string") return e;
     if (e && typeof e === "object") {
@@ -35,6 +37,19 @@ export default function SampleFileSelector() {
     }
     return "Unexpected error";
   };
+  const formatElapsed = (s: number) => {
+    const m = Math.floor(s / 60);
+    const ss = String(s % 60).padStart(2, "0");
+    return `${m}:${ss}`;
+  };
+  useEffect(() => {
+    if (!startTs) return;
+    setElapsed(Math.floor((Date.now() - startTs) / 1000));
+    const t = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startTs) / 1000));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [startTs]);
 
   const publicApi = useMemo(
     () =>
@@ -71,6 +86,8 @@ export default function SampleFileSelector() {
     setError(null);
     setDocumentId(null);
     setDiagnostics([]);
+    setStartTs(Date.now());
+    setElapsed(0);
     try {
       const res = await publicApi.post("/documents/from-sample", { path: selectedPath });
       setMessage(res.data.message || "Processing initiated.");
@@ -108,6 +125,8 @@ export default function SampleFileSelector() {
     setError(null);
     setDocumentId(null);
     setDiagnostics([]);
+    setStartTs(Date.now());
+    setElapsed(0);
     try {
       const formData = new FormData();
       formData.append("document", file);
@@ -144,6 +163,8 @@ export default function SampleFileSelector() {
       setError(null);
       setMessage("Retrying...");
       setDiagnostics([]);
+      setStartTs(Date.now());
+      setElapsed(0);
       await publicApi.post(`/documents/${documentId}/retry`);
       const interval = setInterval(async () => {
         try {
@@ -243,6 +264,11 @@ export default function SampleFileSelector() {
           <div className="mt-2 text-xs text-gray-600">
             Estimated time remaining: {progress.eta_seconds}s
           </div>
+          {startTs && (
+            <div className="text-xs text-gray-600">
+              Time elapsed: {formatElapsed(elapsed)}
+            </div>
+          )}
           {showDetails && (
             <div className="mt-3 rounded-md border border-[#E2E8F0] bg-[#F8FAFC] p-3">
               <div className="text-xs text-gray-700 space-y-1">
