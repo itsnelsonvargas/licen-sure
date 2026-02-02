@@ -1,5 +1,6 @@
 import httpx
 import os
+from dotenv import load_dotenv
 import json
 import uuid
 import asyncio
@@ -20,6 +21,9 @@ except Exception:
 from .models import QuestionData, ChoiceData, AICallbackPayload
 import re
 import random
+
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+load_dotenv()
 
 # --- Configuration ---
 # These would typically come from environment variables

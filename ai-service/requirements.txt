@@ -1,6 +1,8 @@
 fastapi
 uvicorn
 ollama
+google-generativeai
+python-dotenv
 httpx
 python-multipart
 pytesseract
