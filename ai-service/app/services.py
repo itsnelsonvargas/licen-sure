@@ -437,18 +437,66 @@ async def _try_provider_chain(file_path: str, file_extension: str) -> str:
             print(f"OCR provider {p} failed: {e}")
             continue
     return ""
+import ollama
+import google.generativeai as genai
+
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+
+def _generate_mcqs_with_gemini(text: str) -> List[QuestionData]:
+    """Generates Multiple Choice Questions using Gemini."""
+    if not GEMINI_API_KEY:
+        raise ValueError("GEMINI_API_KEY not set")
+    
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    
+    prompt = f"""
+    You are an expert quiz-maker assistant. Your task is to create multiple-choice questions based on the provided text. You must respond ONLY with a valid JSON array. Do not provide any explanation or introductory text.
+
+    Analyze the following text and generate 5 multiple-choice questions. Each question must have 4 options, and exactly one option must be correct.
+
+    The output format MUST be a JSON array of objects, where each object has the following structure:
+    {{
+      "question_text": "The text of the question?",
+      "choices": [
+        {{"choice_text": "Answer A", "is_correct": false}},
+        {{"choice_text": "Answer B", "is_correct": true}},
+        {{"choice_text": "Answer C", "is_correct": false}},
+        {{"choice_text": "Answer D", "is_correct": false}}
+      ]
+    }}
+
+    Here is the text:
+    ---
+    {text[:8000]}
+    ---
+    """
+    
+    try:
+        response = model.generate_content(prompt)
+        generated_content = response.text
+        
+        # Attempt to clean markdown code blocks if present
+        if "```json" in generated_content:
+            generated_content = generated_content.split("```json")[1].split("```")[0].strip()
+        elif "```" in generated_content:
+            generated_content = generated_content.split("```")[1].split("```")[0].strip()
+            
+        questions_raw = json.loads(generated_content)
+        return [QuestionData(**q) for q in questions_raw]
+    except Exception as e:
+        print(f"Gemini generation failed: {e}")
+        raise
+
 def _generate_mcqs_with_ollama(text: str) -> List[QuestionData]:
     """Generates Multiple Choice Questions using Ollama."""
-    # This is a placeholder for the actual Ollama API call
-    # You would typically interact with a running Ollama instance
-    # For example: ollama.generate(model='llama3', prompt=prompt)
     
-    # The prompt should enforce the JSON structure. See section 6 of the plan.
+    # The prompt should enforce the JSON structure.
     ollama_prompt = f"""
 System: You are an expert quiz-maker assistant. Your task is to create multiple-choice questions based on the provided text. You must respond ONLY with a valid JSON array. Do not provide any explanation or introductory text.
 
 User:
-Analyze the following text and generate 3 multiple-choice questions. Each question must have 4 options, and exactly one option must be correct.
+Analyze the following text and generate 5 multiple-choice questions. Each question must have 4 options, and exactly one option must be correct.
 
 The output format MUST be a JSON array of objects, where each object has the following structure:
 {{
@@ -463,53 +511,25 @@ The output format MUST be a JSON array of objects, where each object has the fol
 
 Here is the text:
 ---
-{text}
+{text[:4000]}
 ---
 """
     
     try:
-        # Simulate Ollama response for now
-        # In a real scenario, use:
-        # response = ollama.chat(model='llama3', messages=[{'role': 'user', 'content': ollama_prompt}])
-        # generated_content = response['message']['content']
+        response = ollama.chat(model='llama3', messages=[{'role': 'user', 'content': ollama_prompt}])
+        generated_content = response['message']['content']
 
-        # Dummy response for testing without a running Ollama instance
-        generated_content = """
-[
-    {
-        "question_text": "What is the primary topic of the dummy content?",
-        "choices": [
-            {"choice_text": "Database administration", "is_correct": false},
-            {"choice_text": "Text extraction techniques", "is_correct": true},
-            {"choice_text": "Web development frameworks", "is_correct": false},
-            {"choice_text": "Cloud storage solutions", "is_correct": false}
-        ]
-    },
-    {
-        "question_text": "Which tool is mentioned for image OCR?",
-        "choices": [
-            {"choice_text": "PdfReader", "is_correct": false},
-            {"choice_text": "DocxDocument", "is_correct": false},
-            {"choice_text": "pytesseract", "is_correct": true},
-            {"choice_text": "httpx", "is_correct": false}
-        ]
-    },
-    {
-        "question_text": "What type of HTTP client is used for the callback?",
-        "choices": [
-            {"choice_text": "requests", "is_correct": false},
-            {"choice_text": "guzzle", "is_correct": false},
-            {"choice_text": "httpx", "is_correct": true},
-            {"choice_text": "axios", "is_correct": false}
-        ]
-    }
-]
-"""
+        # Attempt to clean markdown code blocks if present
+        if "```json" in generated_content:
+            generated_content = generated_content.split("```json")[1].split("```")[0].strip()
+        elif "```" in generated_content:
+            generated_content = generated_content.split("```")[1].split("```")[0].strip()
+
         questions_raw = json.loads(generated_content)
         return [QuestionData(**q) for q in questions_raw]
-    except json.JSONDecodeError as e:
-        print(f"Failed to decode JSON from Ollama response: {e}")
-        print(f"Raw content: {generated_content}")
+    except Exception as e:
+        print(f"Ollama generation failed: {e}")
+        # print(f"Raw content: {generated_content}") # Debug if needed
         raise
 
 def _generate_mcqs(text: str) -> List[QuestionData]:
@@ -670,8 +690,31 @@ async def process_document_logic(document_id: uuid.UUID, file_path: str):
         limited_marker = "Limited extraction available; OCR not installed."
         if extracted_text.strip() == limited_marker:
             raise ValueError("No usable text to generate questions")
-        questions = _generate_mcqs(extracted_text)
-        await post_progress(85, "Generating questions", 10, "processing")
+        
+        questions = []
+        
+        # Priority 1: Gemini (fastest cloud option)
+        if not questions and GEMINI_API_KEY:
+            try:
+                await post_progress(85, "Generating questions with Gemini...", 10, "processing")
+                questions = _generate_mcqs_with_gemini(extracted_text)
+            except Exception:
+                pass
+        
+        # Priority 2: Ollama (local)
+        if not questions:
+             try:
+                 await post_progress(86, "Generating questions with Ollama...", 10, "processing")
+                 questions = _generate_mcqs_with_ollama(extracted_text)
+             except Exception:
+                 pass
+        
+        # Priority 3: Fallback
+        if not questions:
+            await post_progress(88, "AI generation unavailable, using basic method", 10, "processing")
+            questions = _generate_mcqs(extracted_text)
+            
+        await post_progress(95, "Questions generated", 5, "processing")
 
         # Call back to Laravel
         tries = 0
