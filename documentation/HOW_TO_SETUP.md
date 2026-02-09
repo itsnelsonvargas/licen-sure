@@ -13,10 +13,63 @@ Ensure you have the following installed on your machine:
 - **Python** (v3.10 or higher)
 - **Git**
 - **SQLite** (usually included with PHP/Python, or install separately)
+- **Tesseract OCR** (for processing scanned documents)
 
 ---
 
-## 1. Backend Setup (Laravel)
+## 1. Tesseract OCR Setup (Required for Scanned Documents)
+
+The AI service uses Tesseract to extract text from image-based documents (like scanned PDFs). Without it, processing for such files will fail.
+
+### Windows Installation
+
+1.  **Download the Installer:**
+    Download the official Tesseract installer from [**UB Mannheim**](https://github.com/UB-Mannheim/tesseract/wiki). Look for an installer named `tesseract-ocr-w64-setup-v5.x.x...exe` (for 64-bit systems).
+
+2.  **Run the Installer:**
+    - When running the installer, it is **highly recommended** to select the option "Add Tesseract to system PATH for all users" or "for current user". This makes it automatically detectable.
+    - Make sure to also select the "English" language pack component during installation.
+
+3.  **Verify Installation (Optional but Recommended):**
+    Open a new terminal (PowerShell or CMD) and run:
+    ```bash
+    tesseract --version
+    ```
+    If it prints the version number, you are all set.
+
+### macOS / Linux Installation
+
+You can typically install Tesseract using a package manager.
+
+- **macOS (using Homebrew):**
+  ```bash
+  brew install tesseract
+  ```
+- **Ubuntu/Debian:**
+  ```bash
+  sudo apt-get update
+  sudo apt-get install tesseract-ocr
+  ```
+
+### Manual Configuration (If Not in PATH)
+
+If you chose not to add Tesseract to your system's PATH during installation, you must tell the AI service where to find it.
+
+1.  **Find your Tesseract `tesseract.exe` path.**
+    On Windows, this is typically `C:\Program Files\Tesseract-OCR\tesseract.exe`.
+
+2.  **Set the Environment Variable:**
+    - Navigate to the `ai-service` directory.
+    - Create a `.env` file by copying the example: `copy .env.example .env`
+    - Open the `.env` file and add the following line, replacing the path with your actual installation path:
+      ```
+      TESSERACT_PATH="C:\Program Files\Tesseract-OCR"
+      ```
+    The application will automatically look for `tesseract.exe` inside this folder.
+
+---
+
+## 2. Backend Setup (Laravel)
 
 The backend handles the core logic, database, and job queues.
 
@@ -59,9 +112,11 @@ The backend handles the core logic, database, and job queues.
 
 ---
 
-## 2. AI Service Setup (FastAPI)
+## 3. AI Service Setup (FastAPI)
 
 The AI service handles document processing and question generation.
+
+**Important:** This service requires Tesseract OCR for handling scanned documents. Please complete the "Tesseract OCR Setup" instructions before proceeding if you need this functionality.
 
 1.  **Navigate to the AI service directory:**
     ```bash
@@ -90,7 +145,7 @@ The AI service handles document processing and question generation.
 
 ---
 
-## 3. Frontend Setup (Next.js)
+## 4. Frontend Setup (Next.js)
 
 The frontend provides the user interface.
 
