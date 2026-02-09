@@ -306,29 +306,55 @@ async def _ocr_with_ocrspace(file_path: str) -> str:
     if not OCRSPACE_API_KEY:
         return ""
     try:
+        file_size = os.path.getsize(file_path)
+        print(f"Attempting OCR with ocr.space for file: {file_path} (Size: {file_size / 1024 / 1024:.2f} MB)")
+
+        # Free tier has a 5MB limit, let's check for that.
+        if file_size > 5 * 1024 * 1024:
+            print("OCR.space: File size exceeds 5MB limit of the free tier. Skipping.")
+            # We could optionally try to connect to a different provider here if we had one
+            return ""
+
         url = "https://api.ocr.space/parse/image"
         data = {
             "language": "eng",
             "isOverlayRequired": False,
             "OCREngine": 2,
+            "scale": True, # Helps with low-res scans
         }
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=90.0) as client: # Increased timeout for larger files
             with open(file_path, "rb") as f:
                 files = {"file": (os.path.basename(file_path), f, "application/octet-stream")}
                 headers = {"apikey": OCRSPACE_API_KEY}
+                
+                print("Sending request to ocr.space API...")
                 resp = await client.post(url, data=data, files=files, headers=headers)
+                
+                print(f"OCR.space response status code: {resp.status_code}")
+                response_text = resp.text
+                print(f"OCR.space raw response: {response_text}")
+
                 resp.raise_for_status()
                 payload = resp.json()
+
+        if payload.get("IsErroredOnProcessing"):
+            print(f"OCR.space API returned an error: {payload.get('ErrorMessage')}")
+            return ""
+
         if isinstance(payload, dict) and payload.get("ParsedResults"):
             texts: List[str] = []
             for pr in payload["ParsedResults"]:
                 t = pr.get("ParsedText") or ""
                 if isinstance(t, str) and t.strip():
                     texts.append(t)
-            return "\n".join(texts).strip()
+            extracted_text = "\n".join(texts).strip()
+            print(f"OCR.space successfully extracted text (length: {len(extracted_text)}).")
+            return extracted_text
+        
+        print("OCR.space response did not contain ParsedResults.")
         return ""
     except Exception as e:
-        print(f"OCR.Space request failed: {e}")
+        print(f"OCR.Space request failed with an exception: {e}")
         return ""
 async def _ocr_with_t3xtr(file_path: str) -> str:
     if not (T3XTR_API_URL and T3XTR_API_KEY):
@@ -643,53 +669,50 @@ async def process_document_logic(document_id: uuid.UUID, file_path: str):
         if not extracted_text.strip():
             if file_extension == 'pdf':
                 await post_progress(60, "No text found, attempting OCR", 20, "processing")
-                if not _tesseract_available():
-                    try:
-                        await post_progress(62, "OCR unavailable: install Tesseract or set TESSERACT_PATH", 20, "processing")
-                    except Exception:
-                        pass
-                    try:
-                        await post_progress(66, "Sending to external OCR provider", 18, "processing")
-                    except Exception:
-                        pass
+                
+                # Priority 1: External OCR Providers (like ocr.space)
+                # Check if any provider is configured via API key or explicit chain
+                if OCR_CHAIN or OCRSPACE_API_KEY or T3XTR_API_KEY or APDF_API_KEY or TEXTMILL_API_KEY:
+                    await post_progress(65, "Attempting OCR with external provider", 18, "processing")
                     try:
                         extracted_text = await _try_provider_chain(local_file_path, file_extension)
-                    except Exception:
-                        extracted_text = ""
+                        await post_progress(70, f"External OCR text len={len(extracted_text)}", 15, "processing")
+                    except Exception as ext_ocr_err:
+                        print(f"External OCR provider failed: {ext_ocr_err}")
+                        extracted_text = "" # Ensure it's empty to allow fallback
+
+                # Priority 2: Local Tesseract OCR (as a fallback)
+                if not extracted_text.strip() and _tesseract_available():
+                    await post_progress(72, "External OCR failed or not configured. Falling back to local OCR.", 15, "processing")
                     try:
-                        await post_progress(70, f"OCR provider text len={len(extracted_text)}", 15, "processing")
-                    except Exception:
-                        await post_progress(70, "OCR provider processed", 15, "processing")
-                else:
-                    try:
+                        # First, try extracting images from the PDF and OCRing them
                         extracted_text = _extract_text_from_pdf_images(local_file_path)
+                        await post_progress(75, f"Local OCR (images) text len={len(extracted_text)}", 12, "processing")
+                        
+                        # If that fails, rasterize the whole page
+                        if not extracted_text.strip():
+                            await post_progress(78, "Rasterizing pages for deeper local OCR", 10, "processing")
+                            extracted_text = _ocr_rasterize_pdf_pages(local_file_path)
+                            await post_progress(80, f"Local OCR (raster) text len={len(extracted_text)}", 8, "processing")
+
                     except Exception as ocr_e:
-                        print(f"OCR fallback failed: {ocr_e}")
-                    try:
-                        await post_progress(70, f"OCR processed images text len={len(extracted_text)}", 15, "processing")
-                    except Exception:
-                        await post_progress(70, "OCR processed images", 15, "processing")
-                    if not extracted_text.strip():
-                        await post_progress(72, "Rasterizing pages for OCR", 15, "processing")
-                        extracted_text = _ocr_rasterize_pdf_pages(local_file_path)
-                        try:
-                            await post_progress(78, f"OCR from rasterized pages text len={len(extracted_text)}", 10, "processing")
-                        except Exception:
-                            await post_progress(78, "OCR from rasterized pages", 10, "processing")
-            if not extracted_text.strip():
-                if (file_extension == 'pdf' and not _tesseract_available()) or (file_extension in ['png', 'jpg', 'jpeg'] and not _tesseract_available()):
-                    try:
-                        await post_progress(82, "Proceeding with limited text extraction due to OCR unavailability", 8, "processing")
-                    except Exception:
-                        pass
-                    try:
-                        extracted_text = await _try_provider_chain(local_file_path, file_extension)
-                    except Exception:
-                        extracted_text = ""
-                    if not extracted_text.strip():
-                        extracted_text = "Limited extraction available; OCR not installed."
+                        print(f"Local OCR fallback failed: {ocr_e}")
+
+                # If all OCR attempts fail
+                elif not extracted_text.strip():
+                     await post_progress(62, "No text found. All OCR methods (external and local) failed or were not configured.", 20, "failed")
+
+            # Handling for non-PDF images (which only have OCR)
+            if not extracted_text.strip() and file_extension in ['png', 'jpg', 'jpeg']:
+                if _tesseract_available():
+                    extracted_text = _extract_text_from_image(local_file_path)
                 else:
-                    raise ValueError("No text extracted from document.")
+                    await post_progress(65, "Tesseract not found. Attempting OCR with external provider.", 18, "processing")
+                    extracted_text = await _try_provider_chain(local_file_path, file_extension)
+
+            # Final check
+            if not extracted_text.strip():
+                raise ValueError("No text extracted from document. OCR might be required and is not configured or failed.")
 
         limited_marker = "Limited extraction available; OCR not installed."
         if extracted_text.strip() == limited_marker:
