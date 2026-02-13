@@ -91,6 +91,13 @@ def _ensure_tesseract_cmd():
         pass
 _ensure_tesseract_cmd()
 
+import logging
+import traceback
+
+# Create a logger
+log_file_path = os.path.join(os.path.dirname(__file__), "..", "ai_service.log")
+logging.basicConfig(filename=log_file_path, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 # --- Helper Functions for Text Extraction ---
 
 import shutil
@@ -117,10 +124,12 @@ def _download_file_from_supabase(file_path: str, local_path: str):
         for sp in candidates:
             if os.path.exists(sp):
                 shutil.copy2(sp, local_path)
-                print(f"Copied '{sp}' to '{local_path}'")
+                logging.info(f"Copied '{sp}' to '{local_path}'")
                 return
         raise FileNotFoundError(f"Source file not found for '{file_path}' in storage app/private/public")
-    except Exception:
+    except Exception as e:
+        logging.error(f"Failed to download file: {e}")
+        logging.error(traceback.format_exc())
         raise
 
 
@@ -144,7 +153,8 @@ def _extract_text_from_pdf(file_path: str) -> str:
                 pass
         return text
     except Exception as e:
-        print(f"PDF text extraction failed: {e}")
+        logging.error(f"PDF text extraction failed: {e}")
+        logging.error(traceback.format_exc())
         return ""
 def _extract_text_from_pdf_metadata(file_path: str) -> str:
     try:
@@ -242,7 +252,7 @@ def _ocr_rasterize_pdf_pages(file_path: str) -> str:
     try:
         import fitz  # PyMuPDF
     except Exception as e:
-        print(f"PyMuPDF not available for rasterization: {e}")
+        logging.error(f"PyMuPDF not available for rasterization: {e}")
         return ""
     texts: List[str] = []
     try:
@@ -269,11 +279,11 @@ def _ocr_rasterize_pdf_pages(file_path: str) -> str:
                     except Exception:
                         pass
             except Exception as e:
-                print(f"Raster OCR page {i} failed: {e}")
+                logging.error(f"Raster OCR page {i} failed: {e}")
                 continue
         doc.close()
     except Exception as e:
-        print(f"Raster OCR failed: {e}")
+        logging.error(f"Raster OCR failed: {e}")
         return ""
     return "\n".join(texts)
 def _extract_text_from_docx(file_path: str) -> str:
@@ -299,7 +309,7 @@ def _extract_text_from_image(file_path: str) -> str:
         text = pytesseract.image_to_string(img, config="--psm 6 -l eng")
         return text
     except Exception as e:
-        print(f"OCR failed for {file_path}: {e}")
+        logging.error(f"OCR failed for {file_path}: {e}")
         return ""
 
 async def _ocr_with_ocrspace(file_path: str) -> str:
@@ -307,11 +317,11 @@ async def _ocr_with_ocrspace(file_path: str) -> str:
         return ""
     try:
         file_size = os.path.getsize(file_path)
-        print(f"Attempting OCR with ocr.space for file: {file_path} (Size: {file_size / 1024 / 1024:.2f} MB)")
+        logging.info(f"Attempting OCR with ocr.space for file: {file_path} (Size: {file_size / 1024 / 1024:.2f} MB)")
 
         # Free tier has a 5MB limit, let's check for that.
         if file_size > 5 * 1024 * 1024:
-            print("OCR.space: File size exceeds 5MB limit of the free tier. Skipping.")
+            logging.warning("OCR.space: File size exceeds 5MB limit of the free tier. Skipping.")
             # We could optionally try to connect to a different provider here if we had one
             return ""
 
@@ -327,18 +337,18 @@ async def _ocr_with_ocrspace(file_path: str) -> str:
                 files = {"file": (os.path.basename(file_path), f, "application/octet-stream")}
                 headers = {"apikey": OCRSPACE_API_KEY}
                 
-                print("Sending request to ocr.space API...")
+                logging.info("Sending request to ocr.space API...")
                 resp = await client.post(url, data=data, files=files, headers=headers)
                 
-                print(f"OCR.space response status code: {resp.status_code}")
+                logging.info(f"OCR.space response status code: {resp.status_code}")
                 response_text = resp.text
-                print(f"OCR.space raw response: {response_text}")
+                logging.info(f"OCR.space raw response: {response_text}")
 
                 resp.raise_for_status()
                 payload = resp.json()
 
         if payload.get("IsErroredOnProcessing"):
-            print(f"OCR.space API returned an error: {payload.get('ErrorMessage')}")
+            logging.error(f"OCR.space API returned an error: {payload.get('ErrorMessage')}")
             return ""
 
         if isinstance(payload, dict) and payload.get("ParsedResults"):
@@ -348,13 +358,14 @@ async def _ocr_with_ocrspace(file_path: str) -> str:
                 if isinstance(t, str) and t.strip():
                     texts.append(t)
             extracted_text = "\n".join(texts).strip()
-            print(f"OCR.space successfully extracted text (length: {len(extracted_text)}).")
+            logging.info(f"OCR.space successfully extracted text (length: {len(extracted_text)}).")
             return extracted_text
         
-        print("OCR.space response did not contain ParsedResults.")
+        logging.warning("OCR.space response did not contain ParsedResults.")
         return ""
     except Exception as e:
-        print(f"OCR.Space request failed with an exception: {e}")
+        logging.error(f"OCR.Space request failed with an exception: {e}")
+        logging.error(traceback.format_exc())
         return ""
 async def _ocr_with_t3xtr(file_path: str) -> str:
     if not (T3XTR_API_URL and T3XTR_API_KEY):
@@ -378,7 +389,7 @@ async def _ocr_with_t3xtr(file_path: str) -> str:
                         return vv.strip()
         return ""
     except Exception as e:
-        print(f"T3XTR request failed: {e}")
+        logging.error(f"T3XTR request failed: {e}")
         return ""
 async def _ocr_with_apdf(file_path: str) -> str:
     if not (APDF_API_URL and APDF_API_KEY):
@@ -397,7 +408,7 @@ async def _ocr_with_apdf(file_path: str) -> str:
                 return v.strip()
         return ""
     except Exception as e:
-        print(f"aPDF request failed: {e}")
+        logging.error(f"aPDF request failed: {e}")
         return ""
 async def _ocr_with_textmill(file_path: str) -> str:
     if not (TEXTMILL_API_URL and TEXTMILL_API_KEY):
@@ -416,7 +427,7 @@ async def _ocr_with_textmill(file_path: str) -> str:
                 return v.strip()
         return ""
     except Exception as e:
-        print(f"TextMill request failed: {e}")
+        logging.error(f"TextMill request failed: {e}")
         return ""
 async def _convert_docx_with_zamzar(file_path: str) -> str:
     if not (ZAMZAR_API_URL and ZAMZAR_API_KEY):
@@ -438,7 +449,7 @@ async def _convert_docx_with_zamzar(file_path: str) -> str:
                 return v.strip()
         return ""
     except Exception as e:
-        print(f"Zamzar request failed: {e}")
+        logging.error(f"Zamzar request failed: {e}")
         return ""
 async def _try_provider_chain(file_path: str, file_extension: str) -> str:
     providers = OCR_CHAIN[:] if OCR_CHAIN else []
@@ -464,7 +475,7 @@ async def _try_provider_chain(file_path: str, file_extension: str) -> str:
             if isinstance(t, str) and t.strip():
                 return t.strip()
         except Exception as e:
-            print(f"OCR provider {p} failed: {e}")
+            logging.error(f"OCR provider {p} failed: {e}")
             continue
     return ""
 import ollama
@@ -515,7 +526,8 @@ def _generate_mcqs_with_gemini(text: str) -> List[QuestionData]:
         questions_raw = json.loads(generated_content)
         return [QuestionData(**q) for q in questions_raw]
     except Exception as e:
-        print(f"Gemini generation failed: {e}")
+        logging.error(f"Gemini generation failed: {e}")
+        logging.error(traceback.format_exc())
         raise
 
 def _generate_mcqs_with_ollama(text: str) -> List[QuestionData]:
@@ -558,7 +570,8 @@ Here is the text:
         questions_raw = json.loads(generated_content)
         return [QuestionData(**q) for q in questions_raw]
     except Exception as e:
-        print(f"Ollama generation failed: {e}")
+        logging.error(f"Ollama generation failed: {e}")
+        logging.error(traceback.format_exc())
         # print(f"Raw content: {generated_content}") # Debug if needed
         raise
 
@@ -609,6 +622,7 @@ def _generate_mcqs(text: str) -> List[QuestionData]:
 import tempfile
 
 async def process_document_logic(document_id: uuid.UUID, file_path: str):
+    logging.info(f"Starting document processing for document_id: {document_id}, file_path: {file_path}")
     # Use cross-platform temporary directory
     temp_dir = tempfile.gettempdir()
     local_file_path = os.path.join(temp_dir, f"{document_id}_{os.path.basename(file_path)}")
@@ -640,7 +654,7 @@ async def process_document_logic(document_id: uuid.UUID, file_path: str):
                 last_err = e
                 await asyncio.sleep(0.5 * tries)
         if last_err:
-            print(f"Failed to post progress after retries: {last_err}")
+            logging.error(f"Failed to post progress after retries: {last_err}")
 
     try:
         await post_progress(10, "Queued", 40, "processing")
@@ -678,7 +692,7 @@ async def process_document_logic(document_id: uuid.UUID, file_path: str):
                         extracted_text = await _try_provider_chain(local_file_path, file_extension)
                         await post_progress(70, f"External OCR text len={len(extracted_text)}", 15, "processing")
                     except Exception as ext_ocr_err:
-                        print(f"External OCR provider failed: {ext_ocr_err}")
+                        logging.error(f"External OCR provider failed: {ext_ocr_err}")
                         extracted_text = "" # Ensure it's empty to allow fallback
 
                 # Priority 2: Local Tesseract OCR (as a fallback)
@@ -696,7 +710,7 @@ async def process_document_logic(document_id: uuid.UUID, file_path: str):
                             await post_progress(80, f"Local OCR (raster) text len={len(extracted_text)}", 8, "processing")
 
                     except Exception as ocr_e:
-                        print(f"Local OCR fallback failed: {ocr_e}")
+                        logging.error(f"Local OCR fallback failed: {ocr_e}")
 
                 # If all OCR attempts fail
                 elif not extracted_text.strip():
@@ -759,7 +773,7 @@ async def process_document_logic(document_id: uuid.UUID, file_path: str):
                     )
                     response.raise_for_status()
                     callback_success = True
-                    print(f"Successfully sent questions for document {document_id} to Laravel.")
+                    logging.info(f"Successfully sent questions for document {document_id} to Laravel.")
             except Exception as e:
                 await asyncio.sleep(0.75 * tries)
         await post_progress(100, "Completed", 0, "completed")
@@ -772,7 +786,8 @@ async def process_document_logic(document_id: uuid.UUID, file_path: str):
             diag = f" stage=final text_len={len(extracted_text)} path={file_path}"
         except Exception:
             diag = ""
-        print(f"Error processing document {document_id}: {err_msg}{diag}")
+        logging.error(f"Error processing document {document_id}: {err_msg}{diag}")
+        logging.error(traceback.format_exc())
         # In a real app, you'd send a 'failed' status back to Laravel
         # For this MVP, we'll just log and let the Laravel job eventually timeout/fail if callback didn't happen
         if not callback_success and not DISABLE_LARAVEL_CALLBACKS:
@@ -786,7 +801,7 @@ async def process_document_logic(document_id: uuid.UUID, file_path: str):
                         timeout=10.0
                     )
             except Exception as cb_e:
-                print(f"Failed to send failure callback for {document_id}: {cb_e}")
+                logging.error(f"Failed to send failure callback for {document_id}: {cb_e}")
         try:
             await post_progress(100, "Failed", 0, "failed")
         except Exception:
@@ -795,4 +810,4 @@ async def process_document_logic(document_id: uuid.UUID, file_path: str):
         # Clean up local file after processing
         if os.path.exists(local_file_path):
             os.remove(local_file_path)
-            print(f"Cleaned up local file: {local_file_path}")
+            logging.info(f"Cleaned up local file: {local_file_path}")
