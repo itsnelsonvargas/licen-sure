@@ -4,13 +4,21 @@ import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import api from "@/lib/api";
+import { AxiosError } from "axios";
+
+interface ValidationErrors {
+  name?: string[];
+  email?: string[];
+  password?: string[];
+  general?: string;
+}
 
 export default function RegisterPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
-  const [errors, setErrors] = useState<any>({});
+  const [errors, setErrors] = useState<ValidationErrors>({});
   const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -41,9 +49,10 @@ export default function RegisterPage() {
       } else {
         router.push("/"); // Redirect to home page
       }
-    } catch (error: any) {
-      if (error.response?.status === 422) {
-        setErrors(error.response.data.errors);
+    } catch (error) {
+        const axiosError = error as AxiosError<{ errors: ValidationErrors }>;
+      if (axiosError.response?.status === 422) {
+        setErrors(axiosError.response.data.errors);
       } else {
         setErrors({ general: "An unexpected error occurred." });
       }

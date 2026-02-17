@@ -1,6 +1,13 @@
-import NextAuth from "next-auth";
+import NextAuth, { User } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import api from "@/lib/api";
+import { AxiosError } from "axios";
+
+interface CustomUser extends User {
+    name: string;
+    email: string;
+    accessToken: string;
+}
 
 const handler = NextAuth({
   providers: [
@@ -28,10 +35,10 @@ const handler = NextAuth({
           } else {
             return null;
           }
-        } catch (error: any) {
+        } catch (error) {
           // Handle login errors (e.g., invalid credentials)
-          // The error response from Laravel should be passed to the client
-          throw new Error(error.response?.data?.message || "Login failed");
+          const axiosError = error as AxiosError<{ message: string }>;
+          throw new Error(axiosError.response?.data?.message || "Login failed");
         }
       },
     }),
@@ -40,13 +47,13 @@ const handler = NextAuth({
     async jwt({ token, user }) {
       // Persist the user object to the token
       if (user) {
-        token.user = user;
+        token.user = user as CustomUser;
       }
       return token;
     },
     async session({ session, token }) {
       // Persist the user object to the session
-      session.user = token.user as any;
+      session.user = token.user as CustomUser;
       return session;
     },
   },

@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import api from "@/lib/api";
 import Link from "next/link";
+import { AxiosError } from "axios";
 
 interface QuizAttempt {
   id: string;
@@ -17,11 +18,31 @@ export default function QuizHistoryPage() {
   const params = useParams();
   const documentId = params.id as string;
   const router = useRouter();
-  const { data: session, status } = useSession();
+  const { status } = useSession();
 
   const [attempts, setAttempts] = useState<QuizAttempt[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const fetchQuizAttempts = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      await api.get("/sanctum/csrf-cookie");
+      const response = await api.get(`/quiz-attempts/${documentId}`);
+      setAttempts(response.data);
+    } catch (err) {
+        const error = err as AxiosError<{ message: string }>;
+        console.error("Failed to fetch quiz attempts:", error);
+        setError(
+            error.response?.data?.message ||
+            error.message ||
+            "Failed to load quiz history."
+        );
+    } finally {
+      setLoading(false);
+    }
+  }, [documentId]);
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -31,26 +52,7 @@ export default function QuizHistoryPage() {
     if (status === "authenticated") {
       fetchQuizAttempts();
     }
-  }, [status, documentId, router]);
-
-  const fetchQuizAttempts = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      await api.get("/sanctum/csrf-cookie");
-      const response = await api.get(`/quiz-attempts/${documentId}`);
-      setAttempts(response.data);
-    } catch (err: any) {
-      console.error("Failed to fetch quiz attempts:", err);
-      setError(
-        err.response?.data?.message ||
-          err.message ||
-          "Failed to load quiz history."
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [status, router, fetchQuizAttempts]);
 
   if (status === "loading" || loading) {
     return <p className="min-h-screen bg-gray-100 p-8">Loading quiz history...</p>;

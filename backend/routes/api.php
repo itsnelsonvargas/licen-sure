@@ -30,6 +30,7 @@ Route::post('/documents/{document}/questions', [DocumentController::class, 'proc
 // Public endpoints for unauthenticated flow
 Route::get('/samples', [DocumentController::class, 'listSamplePdfs']);
 Route::post('/documents/from-sample', [DocumentController::class, 'storeFromSample']);
+Route::post('/documents/from-text', [DocumentController::class, 'storeFromText']);
 Route::get('/public/documents/{document}/quiz', [DocumentController::class, 'showQuizQuestionsPublic']);
 Route::get('/public/documents/{document}/file', [DocumentController::class, 'downloadPublicFile']);
 Route::post('/documents/guest-upload', [DocumentController::class, 'storeGuestUpload']);

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import SampleFileSelector from "@/components/SampleFileSelector";
+import TextUploadForm from "@/components/TextUploadForm";
 
 export default function Home() {
   return (
@@ -88,8 +89,14 @@ export default function Home() {
               </div>
             </div>
           </div>
-          <div className="mt-6">
+          <div className="mt-8">
+            <h2 className="text-2xl font-semibold text-center text-[#1E3A5F]">
+              Or, try it out right now without an account
+            </h2>
+          </div>
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-8">
             <SampleFileSelector />
+            <TextUploadForm />
           </div>
         </div>
       </section>

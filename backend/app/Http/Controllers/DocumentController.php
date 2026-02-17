@@ -1,4 +1,4 @@
-<?php
+'''<?php
 
 namespace App\Http\Controllers;
 
@@ -146,6 +146,39 @@ class DocumentController extends Controller
 
         return response()->json([
             'message' => 'Document uploaded and processing initiated.',
+            'document' => $document,
+        ], 202)->withHeaders($this->corsHeaders());
+    }
+
+    /**
+     * Public: Create a Document from a block of text without authentication.
+     */
+    public function storeFromText(Request $request)
+    {
+        $request->validate([
+            'text' => 'required|string|max:20480', // 20KB Max
+        ]);
+
+        $user = Auth::user() ?? $this->ensureGuestUser();
+        $text = $request->input('text');
+        $title = 'text-upload-' . Str::limit(Str::slug($text), 20) . '.txt';
+        $targetName = Str::uuid() . '.txt';
+        $targetPath = 'documents/' . $user->id . '/' . $targetName;
+
+        Storage::put($targetPath, $text);
+
+        $document = Document::create([
+            'id' => (string) Str::uuid(),
+            'user_id' => $user->id,
+            'title' => $title,
+            'storage_path' => $targetPath,
+            'status' => DocumentStatus::UPLOADING,
+        ]);
+
+        ProcessDocumentJob::dispatch($document);
+
+        return response()->json([
+            'message' => 'Text uploaded and processing initiated.',
             'document' => $document,
         ], 202)->withHeaders($this->corsHeaders());
     }
@@ -350,3 +383,4 @@ class DocumentController extends Controller
         ];
     }
 }
+''

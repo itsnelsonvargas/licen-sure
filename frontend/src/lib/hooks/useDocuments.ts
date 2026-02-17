@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import api from "@/lib/api";
+import { AxiosError } from "axios";
 
 interface Document {
   id: string;
@@ -25,13 +26,14 @@ export function useDocuments() {
       await api.get("/sanctum/csrf-cookie");
       const response = await api.get("/documents");
       setDocuments(response.data);
-    } catch (err: any) {
-      console.error("Failed to fetch documents:", err);
-      if (err?.code === "ERR_NETWORK") {
+    } catch (err) {
+      const error = err as AxiosError<{ message: string }>;
+      console.error("Failed to fetch documents:", error);
+      if (error?.code === "ERR_NETWORK") {
         setError("Backend unreachable. Check backend URL and server status.");
       } else {
         setError(
-          err.response?.data?.message || err.message || "Failed to fetch documents."
+          error.response?.data?.message || error.message || "Failed to fetch documents."
         );
       }
     } finally {
