@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import api from '@/lib/api';
 
 export default function TextUploadForm() {
     const [text, setText] = useState('');
@@ -23,31 +24,25 @@ export default function TextUploadForm() {
             return;
         }
 
-        const apiEndpoint = process.env.NEXT_PUBLIC_API_URL + '/documents/from-text';
-
         try {
-            const response = await fetch(apiEndpoint, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                },
-                body: JSON.stringify({ text }),
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Failed to upload text.');
-            }
-
-            const data = await response.json();
+            const response = await api.post('/api/documents/from-text', { text });
+            const data = response.data;
             router.push(`/quiz/${data.document.id}`);
-
-        } catch (err) {
-             if (err instanceof Error) {
+        } catch (err: unknown) {
+            if (err && typeof err === 'object' && 'response' in err) {
+                const axiosError = err as {
+                    response?: { data?: { message?: string } };
+                    message?: string;
+                };
+                const message =
+                    axiosError.response?.data?.message ||
+                    axiosError.message ||
+                    'Failed to upload text.';
+                setError(message);
+            } else if (err instanceof Error) {
                 setError(err.message);
             } else {
-                setError("An unknown error occurred.");
+                setError('An unknown error occurred.');
             }
         } finally {
             setIsLoading(false);
