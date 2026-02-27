@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import api from '@/lib/api';
 
 export default function TextUploadForm() {
     const [text, setText] = useState('');
@@ -25,35 +24,49 @@ export default function TextUploadForm() {
         }
 
         try {
-            const response = await api.post('/api/documents/from-text', { text });
-            const data = response.data;
-            router.push(`/quiz/${data.document.id}`);
-        } catch (err: unknown) {
-            if (err && typeof err === 'object') {
-                const axiosError = err as {
-                    response?: { data?: { message?: string } };
-                    request?: unknown;
-                    message?: string;
-                };
+            const res = await fetch('/backend-api/documents/from-text', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                },
+                body: JSON.stringify({ text }),
+            });
 
-                // Network or CORS error: no response received from server
-                if (!axiosError.response && axiosError.request) {
-                    setError(
-                        'Cannot reach the quiz service. Please make sure the backend server is running and reachable.'
-                    );
-                    return;
+            if (!res.ok) {
+                // Try to read a useful error message from the response
+                let message = 'Failed to upload text.';
+                try {
+                    const data = await res.json();
+                    if (data && typeof data === 'object' && 'message' in data) {
+                        message = (data as { message?: string }).message || message;
+                    }
+                } catch {
+                    try {
+                        const textBody = await res.text();
+                        if (textBody) {
+                            message = textBody;
+                        }
+                    } catch {
+                        // ignore - keep default message
+                    }
                 }
-
-                const message =
-                    axiosError.response?.data?.message ||
-                    axiosError.message ||
-                    'Failed to upload text.';
                 setError(message);
-            } else if (err instanceof Error) {
-                setError(err.message);
-            } else {
-                setError('An unknown error occurred.');
+                return;
             }
+
+            // Successful response – assume JSON with document id
+            const data = await res.json();
+            if (!data || typeof data !== 'object' || !('document' in data) || !(data as any).document?.id) {
+                setError('Unexpected response from quiz service.');
+                return;
+            }
+
+            router.push(`/quiz/${(data as any).document.id}`);
+        } catch {
+            setError(
+                'Cannot reach the quiz service. Please make sure the backend server is running and reachable.'
+            );
         } finally {
             setIsLoading(false);
         }
