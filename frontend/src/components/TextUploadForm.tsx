@@ -29,11 +29,21 @@ export default function TextUploadForm() {
             const data = response.data;
             router.push(`/quiz/${data.document.id}`);
         } catch (err: unknown) {
-            if (err && typeof err === 'object' && 'response' in err) {
+            if (err && typeof err === 'object') {
                 const axiosError = err as {
                     response?: { data?: { message?: string } };
+                    request?: unknown;
                     message?: string;
                 };
+
+                // Network or CORS error: no response received from server
+                if (!axiosError.response && axiosError.request) {
+                    setError(
+                        'Cannot reach the quiz service. Please make sure the backend server is running and reachable.'
+                    );
+                    return;
+                }
+
                 const message =
                     axiosError.response?.data?.message ||
                     axiosError.message ||
