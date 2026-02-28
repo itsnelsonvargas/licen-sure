@@ -672,6 +672,19 @@ async def process_document_logic(document_id: uuid.UUID, file_path: str):
             extracted_text = _extract_text_from_image(local_file_path)
         elif file_extension == 'docx':
             extracted_text = _extract_text_from_docx(local_file_path)
+        elif file_extension == 'txt':
+            # For text files, just read the content directly
+            try:
+                with open(local_file_path, 'r', encoding='utf-8') as f:
+                    extracted_text = f.read()
+            except UnicodeDecodeError:
+                # Try with different encoding if UTF-8 fails
+                try:
+                    with open(local_file_path, 'r', encoding='latin-1') as f:
+                        extracted_text = f.read()
+                except Exception as e:
+                    logging.error(f"Failed to read text file: {e}")
+                    extracted_text = ""
         else:
             raise ValueError(f"Unsupported file type: {file_extension}")
         await post_progress(55, "Extracting text", 20, "processing")
